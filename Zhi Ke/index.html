@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>课程表</title>
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+    <script>
+        // 拦截手机返回键
+        let backButtonCount = 0;
+        let backButtonTimer = null;
+        
+        document.addEventListener('plusready', function() {
+            // 5+ 环境（5+ App）
+            plus.key.addEventListener('backbutton', function() {
+                handleBackButton();
+            });
+        });
+        
+        // 兼容普通 WebView 环境
+        document.addEventListener('backbutton', function() {
+            handleBackButton();
+        });
+        
+        function handleBackButton() {
+            // 优先检查是否有打开的模态框
+            const openModal = document.querySelector('.modal.show');
+            if (openModal) {
+                // 如果是编辑课程卡片模态框，关闭它
+                if (openModal.id === 'editCourseCardModal') {
+                    if (typeof closeEditCourseCardModal === 'function') {
+                        closeEditCourseCardModal();
+                    } else {
+                        openModal.classList.remove('show');
+                    }
+                    return;
+                }
+                // 其他模态框也关闭
+                openModal.classList.remove('show');
+                return;
+            }
+            
+            // 检查当前所在页面
+            const currentPage = document.querySelector('.page.active');
+            
+            if (!currentPage) {
+                exitApp();
+                return;
+            }
+            
+            // 如果在主页面
+            if (currentPage.id === 'pageMain') {
+                backButtonCount++;
+                
+                if (backButtonCount === 1) {
+                    // 第一次按返回键，显示提示
+                    if (typeof showToast === 'function') {
+                        showToast('再按一次退出应用');
+                    } else {
+                        // 如果 showToast 还未加载，使用简单的 alert 或自定义提示
+                        showSimpleToast('再按一次退出应用');
+                    }
+                    
+                    // 2 秒内再按一次才退出
+                    backButtonTimer = setTimeout(function() {
+                        backButtonCount = 0;
+                    }, 2000);
+                } else if (backButtonCount === 2) {
+                    // 第二次按返回键，退出应用
+                    clearTimeout(backButtonTimer);
+                    exitApp();
+                }
+            } else {
+                // 如果在其他页面，返回主页面
+                const modal = currentPage.closest('.modal');
+                if (modal) {
+                    // 如果是模态框，关闭模态框
+                    modal.classList.remove('show');
+                } else {
+                    // 如果是子页面，返回主页面
+                    if (typeof goBack === 'function') {
+                        goBack();
+                    }
+                }
+            }
+        }
+        
+        function showSimpleToast(message) {
+            // 简单的 Toast 实现
+            const toast = document.createElement('div');
+            toast.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background-color: rgba(0, 0, 0, 0.7);
+                color: white;
+                padding: 15px 25px;
+                border-radius: 8px;
+                font-size: 14px;
+                z-index: 10000;
+            `;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            setTimeout(function() {
+                toast.remove();
+            }, 2000);
+        }
+        
+        function exitApp() {
+            // 尝试使用 5+ API 退出
+            if (typeof plus !== 'undefined') {
+                plus.runtime.quit();
+            } else {
+                // 如果是普通 WebView，尝试使用其他方法
+                if (navigator.app) {
+                    navigator.app.exitApp();
+                } else {
+                    // 最后的手段：关闭窗口
+                    window.close();
+                }
+            }
+        }
+        
+        // 页面加载时重置计数器
+        function resetBackButtonCount() {
+            backButtonCount = 0;
+            if (backButtonTimer) {
+                clearTimeout(backButtonTimer);
+                backButtonTimer = null;
+            }
+        }
+    </script>
+    <div class="app-container">
+        <div class="page page-main active" id="pageMain">
+            <div class="header">
+                <div class="date-info" onclick="showDateModal()">
+                    <div class="main-title" id="mainTitle">2026/03/10</div>
+                    <div class="sub-title" id="subTitle">第 10 周 周二</div>
+                </div>
+                <div class="top-right">
+                    <button class="icon-btn" onclick="showAddClassPage()">+</button>
+                    <button class="icon-btn" onclick="share()">↓</button>
+                    <button class="icon-btn" onclick="showSettingsPage()">⚙</button>
+                </div>
+            </div>
+            <div class="content">
+                <table class="schedule-table" id="scheduleTable">
+                </table>
+            </div>
+        </div>
+
+        <div class="page page-add-class" id="pageAddClass">
+            <div class="header add-class-header">
+                <button class="back-btn" onclick="goBack()">←</button>
+                <div class="title">添加课程</div>
+                <button class="save-btn" onclick="saveCourse()">保存</button>
+            </div>
+
+            <form id="courseForm" class="add-class-form">
+                <div class="form-group">
+                    <label class="label">课程名称</label>
+                    <input type="text" class="input" placeholder="请输入课程名称" id="courseName">
+                </div>
+
+                <div class="form-group">
+                    <label class="label">上课地点</label>
+                    <input type="text" class="input" placeholder="请输入上课地点" id="location">
+                </div>
+
+                <div class="form-group">
+                    <label class="label">授课教师 (选填)</label>
+                    <input type="text" class="input" placeholder="请输入授课教师" id="teacher">
+                </div>
+
+                <div class="form-group">
+                    <label class="label">上课时间</label>
+                    <div class="checkbox-group" id="classTimeCheckboxes">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="label">上课日期（周几）</label>
+                    <div class="checkbox-group">
+                        <label class="checkbox-item">
+                            <input type="checkbox" name="weekday" value="1"> 周一
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" name="weekday" value="2"> 周二
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" name="weekday" value="3"> 周三
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" name="weekday" value="4"> 周四
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" name="weekday" value="5"> 周五
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" name="weekday" value="6"> 周六
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" name="weekday" value="0"> 周日
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="label">开始周数</label>
+                    <div class="time-input-group">
+                        <input type="number" class="time-input" placeholder="从" id="startWeek" min="1" max="20">
+                        <span>至</span>
+                        <input type="number" class="time-input" placeholder="到" id="endWeek" min="1" max="20">
+                        <span>周</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="label">单双周选择</label>
+                    <div class="checkbox-group">
+                        <label class="checkbox-item">
+                            <input type="checkbox" name="weekType" value="odd" id="oddWeek"> 单周
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" name="weekType" value="even" id="evenWeek"> 双周
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="label">课程颜色</label>
+                    <div class="color-picker">
+                        <div class="color-option color-1 selected" data-color="#e3f2fd" onclick="selectColor(this)"></div>
+                        <div class="color-option color-2" data-color="#f3e5f5" onclick="selectColor(this)"></div>
+                        <div class="color-option color-3" data-color="#e8f5e9" onclick="selectColor(this)"></div>
+                        <div class="color-option color-4" data-color="#fff3e0" onclick="selectColor(this)"></div>
+                        <div class="color-option color-5" data-color="#fce4ec" onclick="selectColor(this)"></div>
+                        <div class="color-option color-6" data-color="#e0f7fa" onclick="selectColor(this)"></div>
+                        <div class="color-option color-7" data-color="#fff8e1" onclick="selectColor(this)"></div>
+                        <div class="color-option color-8" data-color="#f3e5f5" onclick="selectColor(this)"></div>
+                        <div class="color-option color-9" data-color="#efebe9" onclick="selectColor(this)"></div>
+                        <div class="color-option color-10" data-color="#e8eaf6" onclick="selectColor(this)"></div>
+                        <div class="color-option color-11" data-color="#e3f2fd" onclick="selectColor(this)"></div>
+                        <div class="color-option color-12" data-color="#f1f8e9" onclick="selectColor(this)"></div>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div class="page page-settings" id="pageSettings">
+            <div class="header settings-header">
+                <button class="back-btn" onclick="goBack()">←</button>
+                <div class="title">设置</div>
+                <div style="width: 24px;"></div>
+            </div>
+
+            <div class="settings-group">
+                <div class="section-title">通用</div>
+                <div class="settings-item" onclick="setClassCount()">
+                    <div class="settings-label">每天课程节数</div>
+                    <div class="settings-value">
+                        <span id="classCountValue">5</span>
+                        <span class="arrow">›</span>
+                    </div>
+                </div>
+                <div class="settings-item" onclick="setClassTime()">
+                    <div class="settings-label">课程时间设置</div>
+                    <div class="settings-value">
+                        <span>设置</span>
+                        <span class="arrow">›</span>
+                    </div>
+                </div>
+                <div class="settings-item" onclick="toggleHideWeekend()">
+                    <div class="settings-label">隐藏周末</div>
+                    <div class="settings-value">
+                        <span id="hideWeekendValue">关闭</span>
+                        <span class="arrow">›</span>
+                    </div>
+                </div>
+                <div class="settings-item" onclick="showFirstWeekDateModal()">
+                    <div class="settings-label">第一周日期设置</div>
+                    <div class="settings-value">
+                        <span id="firstWeekDate">2026/01/01</span>
+                        <span class="arrow">›</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <div class="section-title">外观</div>
+                <div class="settings-item" onclick="setFontSize()">
+                    <div class="settings-label">字体大小</div>
+                    <div class="settings-value">
+                        <span id="fontSizeValue">标准</span>
+                        <span class="arrow">›</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <div class="section-title">数据</div>
+                <div class="settings-item" onclick="clearData()">
+                    <div class="settings-label danger-zone">清除所有数据</div>
+                    <div class="settings-value">
+                        <span class="arrow">›</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <div class="section-title">关于</div>
+                <div class="settings-item">
+                    <div class="settings-label">版本号</div>
+                    <div class="settings-value">
+                        <span>2.0.0</span>
+                    </div>
+                </div>
+                <div class="settings-item">
+                    <div class="settings-label">检查更新</div>
+                    <div class="settings-value">
+                        <span class="arrow">›</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="page page-profile" id="pageProfile">
+            <div class="header profile-header">
+                <div class="user-info-compact">
+                    <div class="avatar-compact">👤</div>
+                    <div class="user-details-compact">
+                        <div class="username-compact">用户</div>
+                        <div class="user-id-compact">ID: 123456</div>
+                    </div>
+                </div>
+                <button class="settings-btn" onclick="showSettingsPage()">⚙</button>
+            </div>
+
+            <div class="menu-group">
+                <div class="menu-item" onclick="showMyCourses()">
+                    <div class="menu-icon icon-blue">📚</div>
+                    <div class="menu-label">我的课程</div>
+                    <span class="menu-arrow">›</span>
+                </div>
+            </div>
+
+            <div class="menu-group">
+                <div class="menu-item" onclick="showHelpFeedback()">
+                    <div class="menu-icon icon-cyan">❓</div>
+                    <div class="menu-label">帮助与反馈</div>
+                    <span class="menu-arrow">›</span>
+                </div>
+                <div class="menu-item" onclick="showAbout()">
+                    <div class="menu-icon icon-red">ℹ️</div>
+                    <div class="menu-label">关于我们</div>
+                    <span class="menu-arrow">›</span>
+                </div>
+            </div>
+
+            <div class="footer">
+                <div>课程表应用 v2.0.0</div>
+                <div style="margin-top: 10px;">© 2026 All Rights Reserved</div>
+            </div>
+        </div>
+
+        <div class="page page-my-courses" id="pageMyCourses">
+            <div class="header my-courses-header">
+                <button class="back-btn" onclick="goBack()">←</button>
+                <div class="title">我的课程</div>
+                <div style="width: 24px;"></div>
+            </div>
+            <div class="content" style="margin-top: 60px; margin-bottom: 60px; height: calc(100vh - 120px);">
+                <div id="coursesList" style="padding: 10px;"></div>
+            </div>
+        </div>
+
+        <div class="week-nav">
+            <button class="week-btn" onclick="previousWeek()">‹ 上周</button>
+            <div class="week-info" id="weekInfo">第 10 周</div>
+            <button class="week-btn" onclick="nextWeek()">下周 ›</button>
+        </div>
+
+        <div class="bottom-nav">
+            <div class="nav-item active" onclick="showMainPage()">课表</div>
+            <div class="nav-item" onclick="showProfilePage()">我的</div>
+        </div>
+    </div>
+
+    <div class="modal" id="dateModal">
+        <div class="modal-content">
+            <div class="modal-title">日期设置</div>
+            <div style="margin-bottom: 15px;">
+                <button class="modal-btn modal-btn-primary" onclick="jumpToCurrentWeek()" style="width: 100%; margin-bottom: 10px;">跳转到当前周</button>
+                <button class="modal-btn modal-btn-secondary" onclick="showWeekSelectModal()" style="width: 100%; margin-bottom: 10px;">跳转到第____周</button>
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-secondary" onclick="closeDateModal()">取消</button>
+                <button class="modal-btn modal-btn-primary" onclick="jumpToCurrentWeek()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="weekSelectModal">
+        <div class="modal-content" style="max-width: 300px;">
+            <div class="modal-title">选择周数</div>
+            <div style="margin-bottom: 15px;">
+                <label class="label">跳转到第</label>
+                <div class="time-selector" onclick="showWeekSelector()" style="max-width: 100px; margin: 0 auto;">
+                    <span id="selectedWeekNum">1</span>
+                    <span class="selector-arrow">▼</span>
+                </div>
+                <label class="label">周</label>
+                <div class="number-wheel" id="weekWheel"></div>
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-secondary" onclick="closeWeekSelectModal()">取消</button>
+                <button class="modal-btn modal-btn-primary" onclick="confirmWeekJump()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="dateSelectModal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-title">选择第一周开始日期</div>
+            <div style="margin-bottom: 15px;">
+                <div class="time-input-row">
+                    <div class="time-selector" onclick="showYearSelector()" style="max-width: 100px;">
+                        <span id="selectedYear">2026</span>
+                        <span class="selector-arrow">▼</span>
+                    </div>
+                    <span style="margin: 0 10px; font-size: 20px;">年</span>
+                    <div class="time-selector" onclick="showMonthSelector()" style="max-width: 70px;">
+                        <span id="selectedMonth">1</span>
+                        <span class="selector-arrow">▼</span>
+                    </div>
+                    <span style="margin: 0 10px; font-size: 20px;">月</span>
+                    <div class="time-selector" onclick="showDaySelector()" style="max-width: 70px;">
+                        <span id="selectedDay">1</span>
+                        <span class="selector-arrow">▼</span>
+                    </div>
+                    <span style="margin: 0 10px; font-size: 20px;">日</span>
+                </div>
+                <div class="number-wheel" id="yearWheel"></div>
+                <div class="number-wheel" id="monthWheel"></div>
+                <div class="number-wheel" id="dayWheel"></div>
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-secondary" onclick="closeDateSelectModal()">取消</button>
+                <button class="modal-btn modal-btn-primary" onclick="confirmFirstWeekDate()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="helpFeedbackModal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-title">帮助与反馈</div>
+            <div style="margin-bottom: 20px; text-align: center;">
+                <p style="font-size: 16px; color: #333; margin-bottom: 15px;">如有任何问题或建议，请联系：</p>
+                <p style="font-size: 14px; color: #666; margin-bottom: 10px;">联系方式：</p>
+                <p style="font-size: 18px; color: #1976d2; margin: 20px 0; cursor: pointer; padding: 10px; background-color: #f0f0f0; border-radius: 8px;" onclick="copyEmail()" onmouseover="this.style.backgroundColor='#e3f2fd'" onmouseout="this.style.backgroundColor='#f0f0f0'">
+                    📧 kanxi12138@126.com
+                </p>
+                <p style="font-size: 13px; color: #999; margin-top: 15px;">点击邮箱地址自动复制</p>
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-primary" onclick="closeHelpFeedbackModal()" style="width: 100%;">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="editCourseCardModal">
+        <div class="modal-content edit-course-modal" style="max-width: 380px;">
+            <div class="edit-course-modal-header">
+                <button class="edit-course-back-btn" onclick="closeEditCourseCardModal()">←</button>
+                <div class="edit-course-modal-title">编辑课程</div>
+                <button class="edit-course-save-btn" onclick="saveCourseCardEdit()">保存</button>
+            </div>
+            
+            <div class="edit-course-modal-body">
+                <div class="edit-course-section">
+                    <div class="edit-course-header">
+                        <div class="edit-course-icon">📚</div>
+                        <div class="edit-course-info">
+                            <div class="edit-course-name" id="displayCourseName">课程名称</div>
+                            <div class="edit-course-detail" id="displayCourseDetail">详细信息</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="edit-course-section">
+                    <div class="section-label">基本信息</div>
+                    <div style="margin-bottom: 15px;">
+                        <label class="label">课程名称</label>
+                        <input type="text" class="input" id="editCardCourseName" placeholder="请输入课程名称">
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label class="label">上课地点</label>
+                        <input type="text" class="input" id="editCardLocation" placeholder="请输入上课地点">
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label class="label">授课教师 (选填)</label>
+                        <input type="text" class="input" id="editCardTeacher" placeholder="请输入授课教师">
+                    </div>
+                </div>
+                
+                <div class="edit-course-section">
+                    <div class="section-label">课程时间</div>
+                    <div style="margin-bottom: 15px;">
+                        <label class="label">上课节次</label>
+                        <div class="checkbox-group" id="editCardClassTimeCheckboxes">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="edit-course-section">
+                    <div class="section-label">课程颜色</div>
+                    <div class="color-picker" id="editCardColorPicker">
+                        <div class="color-option color-1" data-color="#e3f2fd" onclick="selectEditCardColor(this)"></div>
+                        <div class="color-option color-2" data-color="#f3e5f5" onclick="selectEditCardColor(this)"></div>
+                        <div class="color-option color-3" data-color="#e8f5e9" onclick="selectEditCardColor(this)"></div>
+                        <div class="color-option color-4" data-color="#fff3e0" onclick="selectEditCardColor(this)"></div>
+                        <div class="color-option color-5" data-color="#fce4ec" onclick="selectEditCardColor(this)"></div>
+                        <div class="color-option color-6" data-color="#e0f7fa" onclick="selectEditCardColor(this)"></div>
+                        <div class="color-option color-7" data-color="#fff8e1" onclick="selectEditCardColor(this)"></div>
+                        <div class="color-option color-8" data-color="#ede7f6" onclick="selectEditCardColor(this)"></div>
+                        <div class="color-option color-9" data-color="#efebe9" onclick="selectEditCardColor(this)"></div>
+                        <div class="color-option color-10" data-color="#e8eaf6" onclick="selectEditCardColor(this)"></div>
+                        <div class="color-option color-11" data-color="#e1f5fe" onclick="selectEditCardColor(this)"></div>
+                        <div class="color-option color-12" data-color="#f1f8e9" onclick="selectEditCardColor(this)"></div>
+                    </div>
+                </div>
+                
+                <div class="edit-course-section">
+                    <div class="section-label">周数设置</div>
+                    <div class="edit-course-info-block">
+                        <div class="info-row">
+                            <span class="info-label">上课周数：</span>
+                            <span class="info-value" id="displayCourseWeeks">第 1-20 周</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">单双周：</span>
+                            <span class="info-value" id="displayCourseWeekType">全部</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">上课星期：</span>
+                            <span class="info-value" id="displayCourseWeekdays">周一、周二</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="edit-course-modal-footer">
+                    <button class="modal-btn modal-btn-danger" onclick="deleteCourseCompletely()" style="width: 100%; background-color: #f44336; color: white;">删除课程</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="aboutModal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-title">关于我们</div>
+            <div style="margin-bottom: 20px; text-align: center; padding: 20px;">
+                <p style="font-size: 16px; color: #f44336; font-weight: 600; margin-bottom: 15px;">⚠️ 重要提示</p>
+                <p style="font-size: 18px; color: #333; margin: 20px 0; line-height: 1.6;">该版本为公测版本，<br>出现问题请及时联系！</p>
+                <p style="font-size: 14px; color: #999; margin-top: 20px;">版本：v2.0.0</p>
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-primary" onclick="closeAboutModal()" style="width: 100%;">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="fontSizeModal">
+        <div class="modal-content" style="max-width: 300px;">
+            <div class="modal-title">选择字体大小</div>
+            <div style="margin-bottom: 15px;">
+                <div class="time-selector" onclick="showFontSizeSelector()" style="max-width: 150px; margin: 0 auto;">
+                    <span id="selectedFontSize">标准</span>
+                    <span class="selector-arrow">▼</span>
+                </div>
+                <div class="number-wheel" id="fontSizeWheel"></div>
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-secondary" onclick="closeFontSizeModal()">取消</button>
+                <button class="modal-btn modal-btn-primary" onclick="confirmFontSize()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="classCountModal">
+        <div class="modal-content" style="max-width: 300px;">
+            <div class="modal-title">选择每天课程节数</div>
+            <div style="margin-bottom: 15px;">
+                <div class="time-selector" onclick="showClassCountSelector()" style="max-width: 100px; margin: 0 auto;">
+                    <span id="selectedClassCount">11</span>
+                    <span class="selector-arrow">▼</span>
+                </div>
+                <div class="number-wheel" id="classCountWheel"></div>
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-secondary" onclick="closeClassCountModal()">取消</button>
+                <button class="modal-btn modal-btn-primary" onclick="confirmClassCount()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="classTimeModal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-title">课程时间设置</div>
+            <div style="margin-bottom: 15px;">
+                <label class="label">选择第几节课</label>
+                <div class="time-selector" onclick="showClassSelector()">
+                    <span id="selectedClassNum">1</span>
+                    <span class="selector-arrow">▼</span>
+                </div>
+                <div class="number-wheel" id="classWheel"></div>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label class="label">开始时间</label>
+                <div class="time-input-row">
+                    <div class="time-selector" onclick="showHourSelector()">
+                        <span id="selectedHour">08</span>
+                        <span class="selector-arrow">▼</span>
+                    </div>
+                    <span style="margin: 0 10px; font-size: 20px;">:</span>
+                    <div class="time-selector" onclick="showMinuteSelector()">
+                        <span id="selectedMinute">20</span>
+                        <span class="selector-arrow">▼</span>
+                    </div>
+                </div>
+                <div class="number-wheel" id="hourWheel"></div>
+                <div class="number-wheel" id="minuteWheel"></div>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label class="label">结束时间</label>
+                <div class="time-input-row">
+                    <div class="time-selector" onclick="showEndHourSelector()">
+                        <span id="selectedEndHour">09</span>
+                        <span class="selector-arrow">▼</span>
+                    </div>
+                    <span style="margin: 0 10px; font-size: 20px;">:</span>
+                    <div class="time-selector" onclick="showEndMinuteSelector()">
+                        <span id="selectedEndMinute">05</span>
+                        <span class="selector-arrow">▼</span>
+                    </div>
+                </div>
+                <div class="number-wheel" id="endHourWheel"></div>
+                <div class="number-wheel" id="endMinuteWheel"></div>
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-secondary" onclick="closeClassTimeModal()">取消</button>
+                <button class="modal-btn modal-btn-primary" onclick="saveClassTime()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="editCourseModal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-title">编辑课程</div>
+            <div style="margin-bottom: 15px;">
+                <label class="label">课程名称</label>
+                <input type="text" class="input" id="editCourseName" placeholder="请输入课程名称">
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label class="label">上课地点</label>
+                <input type="text" class="input" id="editLocationName" placeholder="请输入上课地点">
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label class="label">授课教师 (选填)</label>
+                <input type="text" class="input" id="editTeacherName" placeholder="请输入授课教师">
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label class="label">课程颜色</label>
+                <div class="color-picker" id="editColorPicker">
+                    <div class="color-option color-1" data-color="#e3f2fd" onclick="selectEditColor(this)"></div>
+                    <div class="color-option color-2" data-color="#f3e5f5" onclick="selectEditColor(this)"></div>
+                    <div class="color-option color-3" data-color="#e8f5e9" onclick="selectEditColor(this)"></div>
+                    <div class="color-option color-4" data-color="#fff3e0" onclick="selectEditColor(this)"></div>
+                    <div class="color-option color-5" data-color="#fce4ec" onclick="selectEditColor(this)"></div>
+                    <div class="color-option color-6" data-color="#e0f7fa" onclick="selectEditColor(this)"></div>
+                    <div class="color-option color-7" data-color="#fff8e1" onclick="selectEditColor(this)"></div>
+                    <div class="color-option color-8" data-color="#ede7f6" onclick="selectEditColor(this)"></div>
+                    <div class="color-option color-9" data-color="#efebe9" onclick="selectEditColor(this)"></div>
+                    <div class="color-option color-10" data-color="#e8eaf6" onclick="selectEditColor(this)"></div>
+                    <div class="color-option color-11" data-color="#e1f5fe" onclick="selectEditColor(this)"></div>
+                    <div class="color-option color-12" data-color="#f1f8e9" onclick="selectEditColor(this)"></div>
+                </div>
+            </div>
+            <div style="margin-bottom: 15px; font-size: 13px; color: #666;">
+                <p>提示：修改将应用到该课程的所有周数和节数</p>
+            </div>
+            <div class="modal-buttons" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <button class="modal-btn modal-btn-secondary" onclick="closeEditCourseModal()">取消</button>
+                <button class="modal-btn modal-btn-danger" onclick="deleteSingleCourse()" style="background-color: #ff9800; color: white;">仅删除本节</button>
+                <button class="modal-btn modal-btn-secondary" onclick="saveEditCourse()">保存</button>
+                <button class="modal-btn modal-btn-danger" onclick="deleteAllCourse()" style="background-color: #f44336; color: white;">删除所有</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="importModal">
+        <div class="modal-content" style="max-width: 320px;">
+            <div class="modal-title">导入课表</div>
+            <div style="margin-bottom: 15px;">
+                <button class="modal-btn modal-btn-primary" onclick="showUrlInputModal()" style="width: 100%; margin-bottom: 10px;">通过教务系统导入课表</button>
+                <p style="font-size: 12px; color: #666; margin: 10px 0; line-height: 1.5; text-align: left;">提示：进入教务系统后请打开有课程表的页面（如个人课表页面）再点右侧"+"号按钮</p>
+                <button class="modal-btn modal-btn-secondary" onclick="closeImportModal()" style="width: 100%;">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="urlInputModal">
+        <div class="modal-content" style="max-width: 350px;">
+            <div class="modal-title">输入教务系统网址</div>
+            <div style="margin-bottom: 15px;">
+                <input type="url" class="input" id="jwxtUrl" placeholder="请输入教务系统网址" style="width: 100%;">
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-secondary" onclick="closeUrlInputModal()">取消</button>
+                <button class="modal-btn modal-btn-primary" onclick="openJwxtWebView()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="./script.js"></script>
+</body>
+</html>
