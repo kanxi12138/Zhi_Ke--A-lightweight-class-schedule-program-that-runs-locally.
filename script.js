@@ -2820,6 +2820,284 @@ function getRandomColor() {
     return colors[Math.floor(Math.random() * colors.length)];
 }
 
+var reminderTimerId = null;
+
+function showReminderPage() {
+    previousPage = 'pageProfile';
+    switchPage('pageReminder');
+    loadReminderSettings();
+    if (typeof resetBackButtonCount === 'function') {
+        resetBackButtonCount();
+    }
+}
+
+function loadReminderSettings() {
+    var data = localStorage.getItem('classReminder');
+    var settings = { enabled: false, hour: 22, minute: 0 };
+    if (data) {
+        try { settings = JSON.parse(data); } catch(e) {}
+    }
+    document.getElementById('reminderToggleValue').textContent = settings.enabled ? '开启' : '关闭';
+    var minStr = String(settings.minute).padStart(2, '0');
+    document.getElementById('reminderTimeValue').textContent = '上课前一天 ' + String(settings.hour).padStart(2, '0') + ':' + minStr;
+}
+
+function toggleReminder() {
+    var data = localStorage.getItem('classReminder');
+    var settings = { enabled: false, hour: 22, minute: 0 };
+    if (data) {
+        try { settings = JSON.parse(data); } catch(e) {}
+    }
+    settings.enabled = !settings.enabled;
+    localStorage.setItem('classReminder', JSON.stringify(settings));
+    document.getElementById('reminderToggleValue').textContent = settings.enabled ? '开启' : '关闭';
+    if (settings.enabled) {
+        startReminderTimer();
+        showToast('上课提醒已开启');
+    } else {
+        stopReminderTimer();
+        showToast('上课提醒已关闭');
+    }
+}
+
+function openReminderTimeModal() {
+    var data = localStorage.getItem('classReminder');
+    var settings = { enabled: false, hour: 22, minute: 0 };
+    if (data) {
+        try { settings = JSON.parse(data); } catch(e) {}
+    }
+    document.getElementById('selectedReminderHour').textContent = String(settings.hour).padStart(2, '0');
+    document.getElementById('selectedReminderMinute').textContent = String(settings.minute).padStart(2, '0');
+    document.getElementById('reminderHourWheel').innerHTML = '';
+    document.getElementById('reminderMinuteWheel').innerHTML = '';
+    document.getElementById('reminderTimeModal').classList.add('show');
+}
+
+function closeReminderTimeModal() {
+    document.getElementById('reminderTimeModal').classList.remove('show');
+}
+
+function showReminderHourSelector() {
+    var wheel = document.getElementById('reminderHourWheel');
+    var minuteWheel = document.getElementById('reminderMinuteWheel');
+    minuteWheel.style.display = 'none';
+    if (wheel.innerHTML !== '' && wheel.style.display !== 'none') {
+        wheel.style.display = 'none';
+        return;
+    }
+    wheel.innerHTML = '';
+    var currentVal = document.getElementById('selectedReminderHour').textContent;
+    for (var i = 0; i <= 23; i++) {
+        var item = document.createElement('div');
+        item.className = 'wheel-item' + (String(i).padStart(2, '0') === currentVal ? ' selected' : '');
+        item.textContent = String(i).padStart(2, '0');
+        item.setAttribute('data-value', i);
+        item.onclick = (function(val) {
+            return function() {
+                document.getElementById('selectedReminderHour').textContent = String(val).padStart(2, '0');
+                wheel.style.display = 'none';
+            };
+        })(i);
+        wheel.appendChild(item);
+    }
+    wheel.style.display = 'block';
+    var selectedItem = wheel.querySelector('.wheel-item.selected');
+    if (selectedItem) selectedItem.scrollIntoView({ block: 'center' });
+}
+
+function showReminderMinuteSelector() {
+    var wheel = document.getElementById('reminderMinuteWheel');
+    var hourWheel = document.getElementById('reminderHourWheel');
+    hourWheel.style.display = 'none';
+    if (wheel.innerHTML !== '' && wheel.style.display !== 'none') {
+        wheel.style.display = 'none';
+        return;
+    }
+    wheel.innerHTML = '';
+    var currentVal = document.getElementById('selectedReminderMinute').textContent;
+    for (var i = 0; i <= 55; i += 5) {
+        var item = document.createElement('div');
+        item.className = 'wheel-item' + (String(i).padStart(2, '0') === currentVal ? ' selected' : '');
+        item.textContent = String(i).padStart(2, '0');
+        item.setAttribute('data-value', i);
+        item.onclick = (function(val) {
+            return function() {
+                document.getElementById('selectedReminderMinute').textContent = String(val).padStart(2, '0');
+                wheel.style.display = 'none';
+            };
+        })(i);
+        wheel.appendChild(item);
+    }
+    wheel.style.display = 'block';
+    var selectedItem = wheel.querySelector('.wheel-item.selected');
+    if (selectedItem) selectedItem.scrollIntoView({ block: 'center' });
+}
+
+function confirmReminderTime() {
+    var hour = parseInt(document.getElementById('selectedReminderHour').textContent);
+    var minute = parseInt(document.getElementById('selectedReminderMinute').textContent);
+    var data = localStorage.getItem('classReminder');
+    var settings = { enabled: false, hour: 22, minute: 0 };
+    if (data) {
+        try { settings = JSON.parse(data); } catch(e) {}
+    }
+    settings.hour = hour;
+    settings.minute = minute;
+    localStorage.setItem('classReminder', JSON.stringify(settings));
+    var minStr = String(minute).padStart(2, '0');
+    var hourStr = String(hour).padStart(2, '0');
+    document.getElementById('reminderTimeValue').textContent = '上课前一天 ' + hourStr + ':' + minStr;
+    closeReminderTimeModal();
+    showToast('提醒时间已设置');
+}
+
+function getTomorrowCourses() {
+    var courses = JSON.parse(localStorage.getItem('courses') || '[]');
+    var tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    var tomorrowWeekday = tomorrow.getDay();
+    var firstWeekDateStr = localStorage.getItem('firstWeekDate');
+    var fwDate = firstWeekDateStr ? new Date(firstWeekDateStr + 'T00:00:00') : new Date(2026, 0, 1);
+    var diffDays = Math.floor((tomorrow - fwDate) / (1000 * 60 * 60 * 24));
+    var weekNum = Math.floor(diffDays / 7) + 1;
+    var result = [];
+    for (var i = 0; i < courses.length; i++) {
+        var c = courses[i];
+        if (!c.weekdays) continue;
+        var weekdayMatch = false;
+        for (var w = 0; w < c.weekdays.length; w++) {
+            if (parseInt(c.weekdays[w]) === tomorrowWeekday) { weekdayMatch = true; break; }
+        }
+        if (!weekdayMatch) continue;
+        if (weekNum >= c.startWeek && weekNum <= c.endWeek) {
+            var isOdd = weekNum % 2 === 1;
+            if (c.oddWeek && !isOdd) continue;
+            if (c.evenWeek && isOdd) continue;
+            var excluded = false;
+            if (c.excludedWeeks) {
+                var tomorrowCol = tomorrowWeekday === 0 ? 7 : tomorrowWeekday;
+                for (var j = 0; j < c.excludedWeeks.length; j++) {
+                    var parts = c.excludedWeeks[j].split('-');
+                    if (parts.length === 3 && parseInt(parts[2]) === weekNum && parseInt(parts[1]) === tomorrowCol) {
+                        excluded = true;
+                        break;
+                    }
+                }
+            }
+            if (!excluded) result.push(c);
+        }
+    }
+    return result;
+}
+
+function sendClassNotification(courses) {
+    if (typeof plus === 'undefined') return;
+
+    var title, content;
+    if (courses.length === 0) {
+        title = '上课提醒';
+        content = '明天没有课程';
+    } else {
+        title = '上课提醒';
+        var lines = [];
+        for (var i = 0; i < courses.length; i++) {
+            lines.push('明天课程:' + courses[i].name + ' ' + (courses[i].location || ''));
+        }
+        content = lines.join('\n');
+    }
+
+    try {
+        var main = plus.android.runtimeMainActivity();
+
+        var Context = plus.android.importClass('android.content.Context');
+        var NotificationManager = plus.android.importClass('android.app.NotificationManager');
+        var nm = main.getSystemService(Context.NOTIFICATION_SERVICE);
+
+        // 通知渠道 (Android 8.0+)
+        try {
+            var NotificationChannel = plus.android.importClass('android.app.NotificationChannel');
+            var channel = new NotificationChannel(
+                'class_reminder', '上课提醒', 4  // IMPORTANCE_HIGH
+            );
+            nm.createNotificationChannel(channel);
+        } catch (ce) {}
+
+        var Intent = plus.android.importClass('android.content.Intent');
+        var PendingIntent = plus.android.importClass('android.app.PendingIntent');
+        var intent = new Intent(main, main.getClass());
+        intent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        var pi = PendingIntent.getActivity(main, 0, intent, 134217728);
+
+        var NotificationBuilder = plus.android.importClass('android.app.Notification$Builder');
+        var builder;
+        try {
+            builder = new NotificationBuilder(main, 'class_reminder');
+        } catch (be) {
+            builder = new NotificationBuilder(main);
+        }
+
+        // 获取有效小图标（调试基座无 App 图标时用系统图标值兜底）
+        var iconId = main.getApplicationInfo().icon;
+        if (!iconId || iconId === 0) {
+            iconId = 17301651; // android.R.drawable.ic_dialog_info
+        }
+
+        builder.setContentTitle(title);
+        builder.setContentText(content);
+        builder.setSmallIcon(iconId);
+        builder.setAutoCancel(true);
+        builder.setContentIntent(pi);
+        builder.setDefaults(-1);
+
+        nm.notify(1001, builder.build());
+    } catch (e) {
+        console.log('Notification error: ' + e);
+    }
+}
+
+function testReminder(e) {
+    if (e) e.stopPropagation();
+    if (typeof plus === 'undefined') {
+        showToast('当前环境不支持通知');
+        return;
+    }
+    var courses = getTomorrowCourses();
+    sendClassNotification(courses);
+    showToast('测试通知已发送');
+}
+
+
+function checkAndSendReminder() {
+    var data = localStorage.getItem('classReminder');
+    var settings = { enabled: false, hour: 22, minute: 0 };
+    if (data) {
+        try { settings = JSON.parse(data); } catch(e) {}
+    }
+    if (!settings.enabled) return;
+    var now = new Date();
+    var today = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+    var lastSent = localStorage.getItem('lastReminderDate');
+    if (now.getHours() === settings.hour && now.getMinutes() === settings.minute) {
+        if (lastSent !== today) {
+            var courses = getTomorrowCourses();
+            sendClassNotification(courses);
+            localStorage.setItem('lastReminderDate', today);
+        }
+    }
+}
+
+function startReminderTimer() {
+    if (reminderTimerId) return;
+    reminderTimerId = setInterval(checkAndSendReminder, 60000);
+}
+
+function stopReminderTimer() {
+    if (reminderTimerId) {
+        clearInterval(reminderTimerId);
+        reminderTimerId = null;
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     initFirstWeekDate();
     initTable();
@@ -2827,4 +3105,22 @@ document.addEventListener('DOMContentLoaded', () => {
     loadHideWeekend();
     loadFontSize();
     updateWeekNavVisibility();
+    loadReminderSettings();
+    var data = localStorage.getItem('classReminder');
+    var settings = { enabled: false };
+    if (data) {
+        try { settings = JSON.parse(data); } catch(e) {}
+    }
+    if (settings.enabled) startReminderTimer();
+});
+
+document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) {
+        var data = localStorage.getItem('classReminder');
+        var settings = { enabled: false };
+        if (data) {
+            try { settings = JSON.parse(data); } catch(e) {}
+        }
+        if (settings.enabled) checkAndSendReminder();
+    }
 });

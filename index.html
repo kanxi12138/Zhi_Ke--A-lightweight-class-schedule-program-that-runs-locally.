@@ -346,6 +346,11 @@
                     <div class="menu-label">我的课程</div>
                     <span class="menu-arrow">›</span>
                 </div>
+                <div class="menu-item" onclick="showReminderPage()">
+                    <div class="menu-icon icon-orange">⏰</div>
+                    <div class="menu-label">上课提醒</div>
+                    <span class="menu-arrow">›</span>
+                </div>
             </div>
 
             <div class="menu-group">
@@ -375,6 +380,33 @@
             </div>
             <div class="content" style="margin-top: 60px; margin-bottom: 60px; height: calc(100vh - 120px);">
                 <div id="coursesList" style="padding: 10px;"></div>
+            </div>
+        </div>
+
+        <div class="page page-my-courses" id="pageReminder">
+            <div class="header my-courses-header">
+                <button class="back-btn" onclick="goBack()">←</button>
+                <div class="title">上课提醒</div>
+                <div style="width: 24px;"></div>
+            </div>
+            <div class="content" style="margin-top: 60px; margin-bottom: 60px; padding: 0 20px;">
+                <div class="settings-group" style="margin-top: 20px; padding: 0;">
+                    <div class="settings-item" onclick="toggleReminder()">
+                        <div class="settings-label">提醒开关</div>
+                        <div class="settings-value">
+                            <span id="reminderToggleValue">关闭</span>
+                            <span class="arrow">›</span>
+                        </div>
+                    </div>
+                    <div class="settings-item" style="position: relative;">
+                        <div class="settings-label" onclick="openReminderTimeModal()">提醒时间</div>
+                        <div class="settings-value">
+                            <span id="reminderTimeValue" onclick="openReminderTimeModal()">上课前一天 22:00</span>
+                            <span class="arrow" onclick="openReminderTimeModal()">›</span>
+                            <span style="font-size: 11px; color: #1976d2; cursor: pointer; margin-left: 4px;" onclick="testReminder(event)">测试</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -721,6 +753,32 @@
             <div class="modal-buttons">
                 <button class="modal-btn modal-btn-secondary" onclick="closeUrlInputModal()">取消</button>
                 <button class="modal-btn modal-btn-primary" onclick="openJwxtWebView()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="reminderTimeModal">
+        <div class="modal-content" style="max-width: 320px;">
+            <div class="modal-title">设置提醒时间</div>
+            <div style="margin-bottom: 15px;">
+                <label class="label">上课前一天</label>
+                <div class="time-input-row">
+                    <div class="time-selector" onclick="showReminderHourSelector()">
+                        <span id="selectedReminderHour">22</span>
+                        <span class="selector-arrow">▼</span>
+                    </div>
+                    <span style="margin: 0 10px; font-size: 20px;">:</span>
+                    <div class="time-selector" onclick="showReminderMinuteSelector()">
+                        <span id="selectedReminderMinute">00</span>
+                        <span class="selector-arrow">▼</span>
+                    </div>
+                </div>
+                <div class="number-wheel" id="reminderHourWheel"></div>
+                <div class="number-wheel" id="reminderMinuteWheel"></div>
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-secondary" onclick="closeReminderTimeModal()">取消</button>
+                <button class="modal-btn modal-btn-primary" onclick="confirmReminderTime()">确定</button>
             </div>
         </div>
     </div>
